@@ -91,16 +91,8 @@ public:
     //  this can be used to ensure other pwm outputs (i.e. for servos) do not conflict
     uint16_t get_motor_mask() override;
 
-    // ext_gyro_gain - set external gyro gain in range 0 ~ 1
-    void ext_gyro_gain(float gain)  override { _ext_gyro_gain_std = gain * 1000.0f; }
-
-    // has_flybar - returns true if we have a mechical flybar
+    // has_flybar - returns true if we have a mechanical flybar
     bool has_flybar() const  override { return _flybar_mode; }
-
-    // supports_yaw_passthrought - returns true if we support yaw passthrough
-    bool supports_yaw_passthrough() const override { return _tail_type == AP_MOTORS_HELI_SINGLE_TAILTYPE_SERVO_EXTGYRO; }
-
-    void set_acro_tail(bool set) override { _acro_tail = set; }
 
     // parameter_check - returns true if helicopter specific parameters are sensible, used for pre-arm check
     bool parameter_check(bool display_msg) const override;
@@ -147,10 +139,8 @@ protected:
     AP_Int16        _servo1_pos;                // Angular location of swash servo #1
     AP_Int16        _servo2_pos;                // Angular location of swash servo #2
     AP_Int16        _servo3_pos;                // Angular location of swash servo #3    
-    AP_Int16        _tail_type;                 // Tail type used: Servo, Servo with external gyro, direct drive variable pitch or direct drive fixed pitch
+    AP_Int16        _tail_type;                 // Tail type used: Servo, direct drive variable pitch or direct drive fixed pitch
     AP_Int8         _swash_type;                // Swash Type Setting - either 3-servo CCPM or H1 Mechanical Mixing
-    AP_Int16        _ext_gyro_gain_std;         // PWM sent to external gyro on ch7 when tail type is Servo w/ ExtGyro
-    AP_Int16        _ext_gyro_gain_acro;        // PWM sent to external gyro on ch7 when tail type is Servo w/ ExtGyro in ACRO
     AP_Int16        _phase_angle;               // Phase angle correction for rotor head.  If pitching the swash forward induces a roll, this can be correct the problem
     AP_Float        _collective_yaw_effect;     // Feed-forward compensation to automatically add rudder input when collective pitch is increased. Can be positive or negative depending on mechanics.
     AP_Int8         _flybar_mode;               // Flybar present or not.  Affects attitude controller used during ACRO flight mode

@@ -53,8 +53,8 @@ const AP_Param::GroupInfo AP_MotorsHeli_Single::var_info[] = {
   
     // @Param: TAIL_TYPE
     // @DisplayName: Tail Type
-    // @Description: Tail type selection.  Simpler yaw controller used if external gyro is selected
-    // @Values: 0:Servo only,1:Servo with ExtGyro,2:DirectDrive VarPitch,3:DirectDrive FixedPitch
+    // @Description: Tail type selection.
+    // @Values: 0:Servo only,2:DirectDrive VarPitch,3:DirectDrive FixedPitch
     // @User: Standard
     AP_GROUPINFO("TAIL_TYPE", 4, AP_MotorsHeli_Single, _tail_type, AP_MOTORS_HELI_SINGLE_TAILTYPE_SERVO),
 
@@ -64,15 +64,6 @@ const AP_Param::GroupInfo AP_MotorsHeli_Single::var_info[] = {
     // @Values: 0:3-Servo CCPM, 1:H1 Mechanical Mixing
     // @User: Standard
     AP_GROUPINFO("SWASH_TYPE", 5, AP_MotorsHeli_Single, _swash_type, AP_MOTORS_HELI_SINGLE_SWASH_CCPM),
-
-    // @Param: GYR_GAIN
-    // @DisplayName: External Gyro Gain
-    // @Description: PWM sent to external gyro on ch7 when tail type is Servo w/ ExtGyro
-    // @Range: 0 1000
-    // @Units: PWM
-    // @Increment: 1
-    // @User: Standard
-    AP_GROUPINFO("GYR_GAIN", 6, AP_MotorsHeli_Single, _ext_gyro_gain_std, AP_MOTORS_HELI_SINGLE_EXT_GYRO_GAIN),
 
     // @Param: PHANG
     // @DisplayName: Swashplate Phase Angle Compensation
@@ -106,15 +97,6 @@ const AP_Param::GroupInfo AP_MotorsHeli_Single::var_info[] = {
     // @Increment: 1
     // @User: Standard
     AP_GROUPINFO("TAIL_SPEED", 10, AP_MotorsHeli_Single, _direct_drive_tailspeed, AP_MOTORS_HELI_SINGLE_DDVPT_SPEED_DEFAULT),
-
-    // @Param: GYR_GAIN_ACRO
-    // @DisplayName: External Gyro Gain for ACRO
-    // @Description: PWM sent to external gyro on ch7 when tail type is Servo w/ ExtGyro. A value of zero means to use H_GYR_GAIN
-    // @Range: 0 1000
-    // @Units: PWM
-    // @Increment: 1
-    // @User: Standard
-    AP_GROUPINFO("GYR_GAIN_ACRO", 11, AP_MotorsHeli_Single,  _ext_gyro_gain_acro, 0),
 
     // @Param: RSC_PWM_MIN
     // @DisplayName: RSC PWM output miniumum
@@ -172,7 +154,7 @@ void AP_MotorsHeli_Single::enable()
     rc_enable_ch(AP_MOTORS_MOT_2);    // swash servo 2
     rc_enable_ch(AP_MOTORS_MOT_3);    // swash servo 3
     rc_enable_ch(AP_MOTORS_MOT_4);    // yaw
-    rc_enable_ch(AP_MOTORS_HELI_SINGLE_AUX);                                 // output for gyro gain or direct drive variable pitch tail motor
+    rc_enable_ch(AP_MOTORS_HELI_SINGLE_AUX);                                 // output for direct drive variable pitch tail motor
     rc_enable_ch(AP_MOTORS_HELI_SINGLE_RSC);                                 // output for main rotor esc
 }
 
@@ -229,14 +211,7 @@ void AP_MotorsHeli_Single::output_test(uint8_t motor_seq, int16_t pwm)
             rc_write(AP_MOTORS_MOT_3, pwm);
             break;
         case 4:
-            // external gyro & tail servo
-            if (_tail_type == AP_MOTORS_HELI_SINGLE_TAILTYPE_SERVO_EXTGYRO) {
-                if (_acro_tail && _ext_gyro_gain_acro > 0) {
-                    write_aux(_ext_gyro_gain_acro/1000.0f);
-                } else {
-                    write_aux(_ext_gyro_gain_std/1000.0f);
-                }
-            }
+            // tail servo
             rc_write(AP_MOTORS_MOT_4, pwm);
             break;
         case 5:
@@ -423,8 +398,7 @@ void AP_MotorsHeli_Single::move_actuators(float roll_out, float pitch_out, float
     if (_servo_mode == SERVO_CONTROL_MODE_AUTOMATED) {
         // rudder feed forward based on collective
         // the feed-forward is not required when the motor is stopped or at idle, and thus not creating torque
-        // also not required if we are using external gyro
-        if ((_main_rotor.get_control_output() > _main_rotor.get_idle_output()) && _tail_type != AP_MOTORS_HELI_SINGLE_TAILTYPE_SERVO_EXTGYRO) {
+        if ((_main_rotor.get_control_output() > _main_rotor.get_idle_output())) {
             // sanity check collective_yaw_effect
             _collective_yaw_effect = constrain_float(_collective_yaw_effect, -AP_MOTORS_HELI_SINGLE_COLYAW_RANGE, AP_MOTORS_HELI_SINGLE_COLYAW_RANGE);
             // the 4.5 scaling factor is to bring the values in line with previous releases
@@ -500,14 +474,6 @@ void AP_MotorsHeli_Single::move_yaw(float yaw_out)
     } else {
         rc_write(AP_MOTORS_MOT_4, calc_pwm_output_1to1(yaw_out, _yaw_servo));
     }
-    if (_tail_type == AP_MOTORS_HELI_SINGLE_TAILTYPE_SERVO_EXTGYRO) {
-        // output gain to exernal gyro
-        if (_acro_tail && _ext_gyro_gain_acro > 0) {
-            write_aux(_ext_gyro_gain_acro/1000.0f);
-        } else {
-            write_aux(_ext_gyro_gain_std/1000.0f);
-        }
-    }
 }
 
 // write_aux - converts servo_out parameter value (0 to 1 range) to pwm and outputs to aux channel (ch7)
@@ -572,22 +538,6 @@ bool AP_MotorsHeli_Single::parameter_check(bool display_msg) const
     if ((_phase_angle > 90) || (_phase_angle < -90)){
         if (display_msg) {
             GCS_MAVLINK::send_statustext_all(MAV_SEVERITY_CRITICAL, "PreArm: H_PHANG out of range");
-        }
-        return false;
-    }
-
-    // returns false if Acro External Gyro Gain is outside of range
-    if ((_ext_gyro_gain_acro < 0) || (_ext_gyro_gain_acro > 1000)){
-        if (display_msg) {
-            GCS_MAVLINK::send_statustext_all(MAV_SEVERITY_CRITICAL, "PreArm: H_GYR_GAIN_ACRO out of range");
-        }
-        return false;
-    }
-
-    // returns false if Standard External Gyro Gain is outside of range
-    if ((_ext_gyro_gain_std < 0) || (_ext_gyro_gain_std > 1000)){
-        if (display_msg) {
-            GCS_MAVLINK::send_statustext_all(MAV_SEVERITY_CRITICAL, "PreArm: H_GYR_GAIN out of range");
         }
         return false;
     }
