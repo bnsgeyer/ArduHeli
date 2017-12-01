@@ -25,6 +25,9 @@ public:
     // returns a unique number specific to this mode
     virtual uint32_t mode_number() const = 0;
 
+    // returns short text name (up to 4 bytes)
+    virtual const char *name4() const = 0;
+
     //
     // methods that sub classes should override to affect movement of the vehicle in this mode
     //
@@ -59,6 +62,9 @@ public:
     // true if heading is controlled
     virtual bool attitude_stabilized() const { return true; }
 
+    // true if mode requires GPS:
+    virtual bool requires_gps() const { return true; }
+
     //
     // navigation methods
     //
@@ -69,6 +75,9 @@ public:
     // set desired location and speed (used in RTL, Guided, Auto)
     //   next_leg_bearing_cd should be heading to the following waypoint (used to slow the vehicle in order to make the turn)
     virtual void set_desired_location(const struct Location& destination, float next_leg_bearing_cd = MODE_NEXT_HEADING_UNKNOWN);
+
+    // set desired location as offset from the EKF origin, return true on success
+    bool set_desired_location_NED(const Vector3f& destination, float next_leg_bearing_cd = MODE_NEXT_HEADING_UNKNOWN);
 
     // true if vehicle has reached desired location. defaults to true because this is normally used by missions and we do not want the mission to become stuck
     virtual bool reached_destination() { return true; }
@@ -91,11 +100,15 @@ protected:
     // subclasses override this to perform any required cleanup when exiting the mode
     virtual void _exit() { return; }
 
-    // calculate steering angle given a desired lateral acceleration
-    void calc_nav_steer(bool reversed = false);
+    // decode pilot steering held in channel_steer, channel_throttle and return in steer_out and throttle_out arguments
+    // steering_out is in the range -4500 ~ +4500, throttle_out is in the range -100 ~ +100
+    void get_pilot_desired_steering_and_throttle(float &steering_out, float &throttle_out);
 
-    // calculate desired lateral acceleration
-    void calc_lateral_acceleration(const struct Location &origin, const struct Location &destination, bool reversed = false);
+    // calculate steering angle given a desired lateral acceleration
+    void calc_steering_from_lateral_acceleration(bool reversed = false);
+
+    // calculate steering output to drive along line from origin to destination waypoint
+    void calc_steering_to_waypoint(const struct Location &origin, const struct Location &destination, bool reversed = false);
 
     // calculates the amount of throttle that should be output based
     // on things like proximity to corners and current speed
@@ -114,7 +127,7 @@ protected:
     float calc_speed_nudge(float target_speed, float cruise_speed, float cruise_throttle);
 
     // calculated a reduced speed(in m/s) based on yaw error and lateral acceleration and/or distance to a waypoint
-    // should be called after calc_lateral_acceleration and before calc_throttle
+    // should be called after calc_steering_to_waypoint and before calc_throttle
     // relies on these internal members being updated: lateral_acceleration, _yaw_error_cd, _distance_to_destination
     float calc_reduced_speed_for_turn_or_distance(float desired_speed);
 
@@ -138,6 +151,24 @@ protected:
     float _desired_speed;       // desired speed in m/s
     float _desired_speed_final; // desired speed in m/s when we reach the destination
     float _speed_error;         // ground speed error in m/s
+
+    bool enter_gps_checks() const;
+
+};
+
+
+class ModeAcro : public Mode
+{
+public:
+
+    uint32_t mode_number() const override { return ACRO; }
+    const char *name4() const override { return "ACRO"; }
+
+    // methods that affect movement of the vehicle in this mode
+    void update() override;
+
+    // attributes for mavlink system status reporting
+    bool has_manual_input() const override { return true; }
 };
 
 
@@ -149,6 +180,7 @@ public:
     ModeAuto(ModeRTL& mode_rtl);
 
     uint32_t mode_number() const override { return AUTO; }
+    const char *name4() const override { return "AUTO"; }
 
     // methods that affect movement of the vehicle in this mode
     void update() override;
@@ -208,6 +240,7 @@ class ModeGuided : public Mode
 public:
 
     uint32_t mode_number() const override { return GUIDED; }
+    const char *name4() const override { return "GUID"; }
 
     // methods that affect movement of the vehicle in this mode
     void update() override;
@@ -251,6 +284,7 @@ class ModeHold : public Mode
 public:
 
     uint32_t mode_number() const override { return HOLD; }
+    const char *name4() const override { return "HOLD"; }
 
     // methods that affect movement of the vehicle in this mode
     void update() override;
@@ -265,6 +299,7 @@ class ModeManual : public Mode
 public:
 
     uint32_t mode_number() const override { return MANUAL; }
+    const char *name4() const override { return "MANU"; }
 
     // methods that affect movement of the vehicle in this mode
     void update() override;
@@ -275,6 +310,9 @@ public:
     // attributes for mavlink system status reporting
     bool has_manual_input() const override { return true; }
     bool attitude_stabilized() const override { return false; }
+
+    bool requires_gps() const override { return false; }
+
 };
 
 
@@ -283,6 +321,7 @@ class ModeRTL : public Mode
 public:
 
     uint32_t mode_number() const override { return RTL; }
+    const char *name4() const override { return "RTL"; }
 
     // methods that affect movement of the vehicle in this mode
     void update() override;
@@ -299,12 +338,47 @@ protected:
     bool _enter() override;
 };
 
+class ModeSmartRTL : public Mode
+{
+public:
+
+    uint32_t mode_number() const override { return SMART_RTL; }
+    const char *name4() const override { return "SRTL"; }
+
+    // methods that affect movement of the vehicle in this mode
+    void update() override;
+
+    // attributes of the mode
+    bool is_autopilot_mode() const override { return true; }
+    bool failsafe_throttle_suppress() const override { return false; }
+
+    float get_distance_to_destination() const override { return _distance_to_destination; }
+    bool reached_destination() override { return smart_rtl_state == SmartRTL_StopAtHome; }
+
+    // save current position for use by the smart_rtl flight mode
+    void save_position(bool save_pos);
+
+protected:
+
+    // Safe RTL states
+    enum SmartRTLState {
+        SmartRTL_WaitForPathCleanup,
+        SmartRTL_PathFollow,
+        SmartRTL_StopAtHome,
+        SmartRTL_Failure
+    } smart_rtl_state;
+
+    bool _enter() override;
+    bool _load_point;
+};
+
 
 class ModeSteering : public Mode
 {
 public:
 
     uint32_t mode_number() const override { return STEERING; }
+    const char *name4() const override { return "STER"; }
 
     // methods that affect movement of the vehicle in this mode
     void update() override;
@@ -318,6 +392,7 @@ class ModeInitializing : public Mode
 public:
 
     uint32_t mode_number() const override { return INITIALISING; }
+    const char *name4() const override { return "INIT"; }
 
     // methods that affect movement of the vehicle in this mode
     void update() override { }

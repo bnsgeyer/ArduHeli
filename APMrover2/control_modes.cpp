@@ -9,6 +9,9 @@ Mode *Rover::control_mode_from_num(const enum mode num)
     case MANUAL:
         ret = &mode_manual;
         break;
+    case ACRO:
+        ret = &mode_acro;
+        break;
     case STEERING:
         ret = &mode_steering;
         break;
@@ -20,6 +23,9 @@ Mode *Rover::control_mode_from_num(const enum mode num)
         break;
     case RTL:
         ret = &mode_rtl;
+        break;
+    case SMART_RTL:
+        ret = &mode_smartrtl;
         break;
     case GUIDED:
        ret = &mode_guided;
@@ -156,8 +162,8 @@ void Rover::read_aux_switch()
                 return;
             }
 
-            // record the waypoint if in manual or steering modes
-            if (control_mode == &mode_manual || control_mode == &mode_steering) {
+            // record the waypoint if not in auto mode
+            if (control_mode != &mode_auto) {
                 // create new mission command
                 AP_Mission::Mission_Command cmd = {};
 
