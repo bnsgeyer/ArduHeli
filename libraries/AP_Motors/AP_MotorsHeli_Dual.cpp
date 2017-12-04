@@ -451,10 +451,6 @@ void AP_MotorsHeli_Dual::move_actuators(float roll_out, float pitch_out, float c
         }
     }
 
-    if (_heliflags.inverted_flight) {
-        collective_in = 1 - collective_in;
-    }
-
     float yaw_compensation = 0.0f;
 
     // if servo output not in manual mode, process pre-compensation factors
